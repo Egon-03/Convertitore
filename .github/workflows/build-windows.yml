@@ -26,7 +26,8 @@ jobs:
         run: choco install innosetup -y --no-progress
 
       # i componenti scaricati (≈1,5 GB) restano in cache tra una build e l'altra
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: cache-tools
         with:
           path: tools
           key: tools-${{ hashFiles('build/scarica_strumenti.ps1') }}
@@ -36,6 +37,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: powershell -ExecutionPolicy Bypass -File build\build.ps1
+
+      # salva i componenti anche se un passaggio successivo fallisce
+      - uses: actions/cache/save@v4
+        if: always() && steps.cache-tools.outputs.cache-hit != 'true' && hashFiles('tools/libreoffice/program/soffice.exe') != ''
+        with:
+          path: tools
+          key: tools-${{ hashFiles('build/scarica_strumenti.ps1') }}
 
       - uses: actions/upload-artifact@v4
         with:

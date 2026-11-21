@@ -22,7 +22,10 @@ SetupIconFile=..\assets\icon.ico
 UninstallDisplayIcon={app}\ConvertiTutto.exe
 Compression=lzma2/ultra64
 SolidCompression=yes
-LZMANumBlockThreads=4
+LZMANumBlockThreads=2
+; il compilatore è a 32 bit: con più di 1 GB di componenti la compressione va fatta
+; in un processo separato (a 64 bit), altrimenti "Out of memory"
+LZMAUseSeparateProcess=yes
 WizardStyle=modern
 DiskSpanning=no
 
