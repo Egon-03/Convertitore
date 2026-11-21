@@ -8,6 +8,11 @@ on:
   push:
     branches: [main, "claude/**"]
 
+# una nuova build annulla quella ancora in corso sullo stesso ramo
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-latest
@@ -52,16 +57,45 @@ jobs:
           retention-days: 30
           compression-level: 0
 
-      - name: Verifica (installazione, avvio, test, DWG e Pages reali)
+      - name: "Verifica: installazione silenziosa"
+        if: always()
+        timeout-minutes: 15
         shell: powershell
-        run: powershell -ExecutionPolicy Bypass -File build\verifica.ps1
+        run: powershell -ExecutionPolicy Bypass -File build\verifica.ps1 -Fase installa
+
+      - name: "Verifica: avvio e menu del tasto destro"
+        if: always()
+        timeout-minutes: 10
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File build\verifica.ps1 -Fase avvio
+
+      - name: "Verifica: DWG e Pages reali (Python)"
+        if: always()
+        timeout-minutes: 20
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File build\verifica.ps1 -Fase reali
+
+      - name: "Verifica: autotest dell'exe installato"
+        if: always()
+        timeout-minutes: 45
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File build\verifica.ps1 -Fase exe
+
+      - name: "Verifica: make_samples e run_all (Python)"
+        if: always()
+        timeout-minutes: 45
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File build\verifica.ps1 -Fase test
+
+      - name: "Verifica: autotest dell'exe sui campioni"
+        if: always()
+        timeout-minutes: 45
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File build\verifica.ps1 -Fase exe_campioni
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Verifica
-          path: |
-            build/verifica/
-            C:/tmp/out_reali/
-            C:/tmp/out_exe_reali/
+          path: build/verifica/
           retention-days: 30

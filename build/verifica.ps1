@@ -5,7 +5,9 @@
 # menu del tasto destro, poi esegue i test (con Python e con l'exe installato).
 # Resoconti e schermata in build\verifica\.
 
-param([string]$Work = "C:\tmp")
+# -Fase permette di eseguire un solo passaggio: installa, avvio, reali, exe, test, exe_campioni (predefinito: tutti)
+param([string]$Work = "C:\tmp", [string]$Fase = "tutte")
+function Fase($n) { return ($Fase -eq "tutte" -or $Fase -eq $n) }
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
@@ -22,12 +24,17 @@ Write-Host "Setup: $($setup.FullName)  ($([math]::Round($setup.Length / 1MB)) MB
 
 # ------------------------------------------------------------ 1. installazione silenziosa
 $app = Join-Path $Work "ConvertiTutto_installato"
-$p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /TASKS=`"contextmenu`" /DIR=`"$app`" /LOG=`"$Out\installazione.log`"" -Wait -PassThru
 $exe = Join-Path $app "ConvertiTutto.exe"
-if ($p.ExitCode -ne 0 -or -not (Test-Path $exe)) { throw "Installazione fallita (codice $($p.ExitCode))" }
-Write-Host "Installato in $app"
+if (Fase "installa") {
+    # niente -Wait: in Windows PowerShell aspetterebbe anche i processi figli
+    $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /TASKS=`"contextmenu`" /DIR=`"$app`" /LOG=`"$Out\installazione.log`"" -PassThru
+    if (-not $p.WaitForExit(900000)) { throw "Installazione bloccata" }
+    if ($p.ExitCode -ne 0 -or -not (Test-Path $exe)) { throw "Installazione fallita (codice $($p.ExitCode))" }
+    Write-Host "Installato in $app"
+}
 
 # ------------------------------------------------------------ 2. menu del tasto destro
+if (Fase "avvio") {
 $key = "HKCU:\Software\Classes\*\shell\ConvertiTutto\command"
 if (Test-Path -LiteralPath $key) {
     Write-Host "Menu del tasto destro: $((Get-ItemProperty -LiteralPath $key).'(default)')"
@@ -55,26 +62,42 @@ if ($proc.HasExited) { $problemi += "l'app si è chiusa subito (codice $($proc.E
 elseif ($trovato) { Write-Host "Avvio OK: titolo '$($proc.MainWindowTitle)', testo 'Trascina qui un file' presente" }
 else { $problemi += "finestra senza il testo 'Trascina qui un file'" }
 if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+}
 
 # ------------------------------------------------------------ 4. test con Python (tool di tools\ nel PATH)
 $py = Join-Path $Root ".venv\Scripts\python.exe"
 $t = Join-Path $Root "tools"
-$env:Path = (@("$t\ffmpeg\bin", "$t\libreoffice\program", "$t\tesseract", "$t\7zip", "$t\libredwg", "$t\calibre") -join ";") + ";" + $env:Path
-$env:TESSDATA_PREFIX = "$t\tesseract\tessdata"
 $campioni = Join-Path $Work "campioni"
-$ErrorActionPreference = "Continue"
-& $py tests\make_samples.py $campioni 2>&1 | Tee-Object (Join-Path $Out "make_samples.log")
-if ($LASTEXITCODE -ne 0) { $problemi += "make_samples.py fallito" }
-& $py tests\run_all.py $campioni (Join-Path $Work "out") 2>&1 | Tee-Object (Join-Path $Out "run_all.log")
-& $py tests\run_all.py tests\reali (Join-Path $Work "out_reali") 2>&1 | Tee-Object (Join-Path $Out "run_all_reali.log")
-$ErrorActionPreference = "Stop"
+if ((Fase "test") -or (Fase "reali")) {
+    $env:Path = (@("$t\ffmpeg\bin", "$t\libreoffice\program", "$t\tesseract", "$t\7zip", "$t\libredwg", "$t\calibre") -join ";") + ";" + $env:Path
+    $env:TESSDATA_PREFIX = "$t\tesseract\tessdata"
+    $ErrorActionPreference = "Continue"
+    if (Fase "test") {
+        & $py -u tests\make_samples.py $campioni 2>&1 | Tee-Object (Join-Path $Out "make_samples.log")
+        if ($LASTEXITCODE -ne 0) { $problemi += "make_samples.py fallito" }
+        & $py -u tests\run_all.py $campioni (Join-Path $Work "out") 2>&1 | Tee-Object (Join-Path $Out "run_all.log")
+    }
+    if (Fase "reali") {
+        & $py -u tests\run_all.py tests\reali (Join-Path $Work "out_reali") 2>&1 | Tee-Object (Join-Path $Out "run_all_reali.log")
+        Copy-Item -Recurse -Force (Join-Path $Work "out_reali") (Join-Path $Out "risultati_reali")
+    }
+    $ErrorActionPreference = "Stop"
+    Remove-Item Env:TESSDATA_PREFIX
+}
 
-# ------------------------------------------------------------ 5. stessi test con l'exe installato
-Remove-Item Env:TESSDATA_PREFIX
-foreach ($c in @(@($campioni, "out_exe", "autotest_exe.log"), @((Join-Path $Root "tests\reali"), "out_exe_reali", "autotest_exe_reali.log"))) {
-    $rep = Join-Path $Out $c[2]
-    $p = Start-Process $exe -ArgumentList "--autotest `"$($c[0])`" `"$(Join-Path $Work $c[1])`" `"$rep`"" -Wait -PassThru
-    if (Test-Path $rep) { Get-Content $rep | Write-Host } else { $problemi += "autotest dell'exe senza resoconto ($($c[2]))" }
+# ------------------------------------------------------------ 5. stessi test con l'exe installato (usa i suoi tools\)
+$giri = @()
+if (Fase "exe") { $giri += , @((Join-Path $Root "tests\reali"), "out_exe_reali", "autotest_exe_reali.log") }
+if (Fase "exe_campioni") { $giri += , @($campioni, "out_exe", "autotest_exe.log") }
+if ($giri) {
+    foreach ($c in $giri) {
+        if (-not (Test-Path $c[0])) { continue }
+        $rep = Join-Path $Out $c[2]
+        Write-Host "Autotest dell'exe su $($c[0])"
+        $p = Start-Process $exe -ArgumentList "--autotest `"$($c[0])`" `"$(Join-Path $Work $c[1])`" `"$rep`"" -PassThru
+        if (-not $p.WaitForExit(1500000)) { Stop-Process -Id $p.Id -Force; $problemi += "autotest dell'exe bloccato ($($c[2]))" }
+        if (Test-Path $rep) { Get-Content $rep | Write-Host } else { $problemi += "autotest dell'exe senza resoconto ($($c[2]))" }
+    }
 }
 
 Write-Host ""
@@ -82,5 +105,5 @@ foreach ($f in "run_all.log", "run_all_reali.log", "autotest_exe.log", "autotest
     $l = Join-Path $Out $f
     if (Test-Path $l) { Write-Host ("{0,-24} {1}" -f $f, ((Get-Content $l | Select-String "Riuscite:") -join "")) }
 }
-if ($problemi) { Write-Host "PROBLEMI:"; $problemi | ForEach-Object { Write-Host "  - $_" } }
+if ($problemi) { Write-Host "PROBLEMI:"; $problemi | ForEach-Object { Write-Host "  - $_" }; exit 1 }
 else { Write-Host "Avvio, menu e test eseguiti: vedi i resoconti in $Out" }

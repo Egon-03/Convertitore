@@ -17,7 +17,13 @@ from . import engine, formats
 
 def run(samples: str, out_root: str, report: str) -> int:
     ok = fail = 0
-    lines = []
+    f = open(report, "w", encoding="utf-8", buffering=1)  # riga per riga: utile se una conversione si blocca
+
+    class _Lines:
+        def append(self, line: str) -> None:
+            f.write(line + "\n")
+
+    lines = _Lines()
     for name in sorted(os.listdir(samples)):
         src = os.path.join(samples, name)
         try:
@@ -43,6 +49,5 @@ def run(samples: str, out_root: str, report: str) -> int:
                 if not isinstance(e, engine.ConversionError):
                     lines.append("     " + traceback.format_exc().replace("\n", "\n     "))
     lines.append(f"\nRiuscite: {ok}  Fallite: {fail}")
-    with open(report, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+    f.close()
     return 0 if fail == 0 else 1
