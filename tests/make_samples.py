@@ -57,10 +57,15 @@ subprocess.run(["soffice", "--headless", "--convert-to", "pdf", "--outdir", out,
                check=True, capture_output=True)
 
 # PDF scansionato (solo immagine)
-font = None
-for f in ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
+font = big = None
+windir = os.environ.get("WINDIR", r"C:\Windows")
+for f in ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+          os.path.join(windir, "Fonts", "arial.ttf"), os.path.join(windir, "Fonts", "segoeui.ttf")]:
     if os.path.exists(f):
         font = ImageFont.truetype(f, 34); big = ImageFont.truetype(f, 54)
+        break
+if font is None:  # nessun font di sistema trovato: quello incorporato in Pillow
+    font = ImageFont.load_default(34); big = ImageFont.load_default(54)
 pages = []
 for n in range(2):
     pg = Image.new("RGB", (1654, 2339), "white")

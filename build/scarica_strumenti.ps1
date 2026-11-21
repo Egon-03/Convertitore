@@ -22,10 +22,14 @@ function Get-File($url, $dest) {
 function Get-GitHubAsset($repo, $pattern) {
     $headers = @{ "User-Agent" = "ConvertiTutto-build" }
     if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
-    $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers $headers
-    $asset = $rel.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
-    if (-not $asset) { throw "Nessun file '$pattern' nell'ultima versione di $repo" }
-    return $asset.browser_download_url
+    # l'ultima versione a volte non contiene ancora i file per Windows: guarda anche le precedenti
+    $rels = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=15" -Headers $headers
+    foreach ($rel in $rels) {
+        if ($rel.draft) { continue }
+        $asset = $rel.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
+        if ($asset) { Write-Host "  $repo $($rel.tag_name): $($asset.name)"; return $asset.browser_download_url }
+    }
+    throw "Nessun file '$pattern' nelle versioni recenti di $repo"
 }
 
 function Expand-Msi($msi, $target) {

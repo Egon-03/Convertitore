@@ -1,4 +1,4 @@
-# Crea automaticamente l'installazione per Windows su GitHub.
+# Crea automaticamente l'installazione per Windows su GitHub e la verifica.
 # Dopo ogni modifica (o avviandolo a mano da "Actions"), il file
 # ConvertiTutto-Setup-x.y.z.exe si scarica dagli "Artifacts" della build.
 name: Build Windows
@@ -6,12 +6,15 @@ name: Build Windows
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]
 
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
 
@@ -21,6 +24,12 @@ jobs:
 
       - name: Inno Setup
         run: choco install innosetup -y --no-progress
+
+      # i componenti scaricati (≈1,5 GB) restano in cache tra una build e l'altra
+      - uses: actions/cache@v4
+        with:
+          path: tools
+          key: tools-${{ hashFiles('build/scarica_strumenti.ps1') }}
 
       - name: Crea l'installazione
         shell: powershell
@@ -32,4 +41,19 @@ jobs:
         with:
           name: ConvertiTutto-Setup
           path: build/Output/*.exe
+          retention-days: 30
+          compression-level: 0
+
+      - name: Verifica (installazione, avvio, test, DWG e Pages reali)
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File build\verifica.ps1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Verifica
+          path: |
+            build/verifica/
+            C:/tmp/out_reali/
+            C:/tmp/out_exe_reali/
           retention-days: 30

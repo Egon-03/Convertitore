@@ -5,3 +5,4 @@ build/Output/
 build/ConvertiTutto/
 *.spec
 __pycache__/
+build/verifica/

@@ -8,8 +8,39 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
+function Install-WithWinget($id) {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { return }
+    Write-Host "  installo $id con winget"
+    & winget install --id $id -e --silent --accept-package-agreements --accept-source-agreements --scope user
+    if ($LASTEXITCODE -ne 0) { & winget install --id $id -e --silent --accept-package-agreements --accept-source-agreements }
+    # aggiorna il PATH della sessione corrente
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+}
+
+function Find-Iscc {
+    @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+
+Write-Host "0/4  Requisiti (Python 3.12, Inno Setup 6)"
+$hasPy = $false
+try { & py -3.12 -c "import sys" *> $null; $hasPy = ($LASTEXITCODE -eq 0) } catch { }
+if (-not $hasPy -and -not (Test-Path ".venv")) { Install-WithWinget "Python.Python.3.12" }
+if (-not (Find-Iscc)) { Install-WithWinget "JRSoftware.InnoSetup" }
+
 Write-Host "1/4  Ambiente Python"
-if (-not (Test-Path ".venv")) { py -3 -m venv .venv }
+if (-not (Test-Path ".venv")) {
+    # preferisce Python 3.12 (3.13 come riserva) anche se sul PC ci sono altre versioni
+    $made = $false
+    $ErrorActionPreference = "Continue"
+    foreach ($v in "-3.12", "-3.13") {
+        try { & py $v -c "import sys" *> $null } catch { continue }
+        if ($LASTEXITCODE -eq 0) { & py $v -m venv .venv; $made = $true; break }
+    }
+    if (-not $made) { try { & python -m venv .venv } catch { } }
+    $ErrorActionPreference = "Stop"
+    if (-not (Test-Path ".venv\Scripts\python.exe")) { throw "Python 3.12 non trovato: installalo con  winget install Python.Python.3.12" }
+}
 $py = Join-Path $Root ".venv\Scripts\python.exe"
 & $py -m pip install --upgrade pip | Out-Null
 & $py -m pip install -r requirements.txt pyinstaller
@@ -31,14 +62,16 @@ Write-Host "3/4  Programma (PyInstaller)"
     --collect-submodules ezdxf `
     --collect-submodules pdf2docx `
     --collect-submodules rawpy `
+    --collect-submodules fontTools `
+    --collect-data pdfminer `
+    --hidden-import cv2 `
     --hidden-import py7zr `
     main.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller fallito" }
 Copy-Item -Recurse -Force tools "dist\ConvertiTutto\tools"
 
 Write-Host "4/4  Installazione (Inno Setup)"
-$iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") |
-    Where-Object { Test-Path $_ } | Select-Object -First 1
+$iscc = Find-Iscc
 if (-not $iscc) { throw "Inno Setup 6 non trovato: installalo con  winget install JRSoftware.InnoSetup" }
 $ver = (& $py -c "import convertitutto; print(convertitutto.__version__)").Trim()
 & $iscc "/DAppVersion=$ver" (Join-Path $PSScriptRoot "installer.iss")
