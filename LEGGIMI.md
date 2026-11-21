@@ -34,7 +34,12 @@ winget install Python.Python.3.12 JRSoftware.InnoSetup
 powershell -ExecutionPolicy Bypass -File build\build.ps1
 ```
 
+(se Python 3.12 o Inno Setup 6 mancano, `build.ps1` li installa da solo con winget).
+
 Il file `build\Output\ConvertiTutto-Setup-1.0.0.exe` è l'installazione completa.
+Per controllarla: `powershell -ExecutionPolicy Bypass -File build\verifica.ps1`
+(installa in `C:\tmp`, avvia l'app, controlla il menu del tasto destro ed esegue
+tutti i test, anche con i DWG e i file Pages/Keynote/Numbers reali di `tests\reali`).
 Lo script scarica da solo i componenti gratuiti (FFmpeg, LibreOffice, Tesseract,
 7-Zip, LibreDWG, Calibre) e li mette dentro l'installazione: chi installa
 ConvertiTutto non deve installare nient'altro.
