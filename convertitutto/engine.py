@@ -281,9 +281,80 @@ LO_FILTERS = {
 }
 
 
+def _kill_tree(proc) -> None:
+    """Chiude il processo e i suoi figli (soffice.exe avvia soffice.bin)."""
+    if tools.IS_WIN:
+        tools.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)])
+    else:
+        proc.kill()
+    try:
+        proc.communicate(timeout=30)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _html_to_text(html_path: str, out: str) -> None:
+    from html.parser import HTMLParser
+
+    class P(HTMLParser):
+        BLOCK = {"p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6", "table", "title"}
+
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.parts, self.skip, self.cell = [], 0, 0
+
+        def _block(self):  # dentro una cella della tabella i paragrafi restano sulla stessa riga
+            self.parts.append(" " if self.cell else "\n")
+
+        def handle_starttag(self, tag, attrs):
+            if tag in ("style", "script", "head"):
+                self.skip += 1
+            elif tag in ("td", "th"):
+                self.cell += 1
+                self.parts.append("\t")
+            elif tag in self.BLOCK:
+                self._block()
+
+        def handle_endtag(self, tag):
+            if tag in ("style", "script", "head"):
+                self.skip = max(0, self.skip - 1)
+            elif tag in ("td", "th"):
+                self.cell = max(0, self.cell - 1)
+            elif tag in self.BLOCK:
+                self._block()
+
+        def handle_data(self, data):
+            if not self.skip:
+                self.parts.append(re.sub(r"\s+", " ", data))
+
+    with open(html_path, "rb") as f:
+        raw = f.read()
+    m = re.search(rb'charset=["\']?([\w-]+)', raw[:2000])
+    p = P()
+    p.feed(raw.decode(m.group(1).decode() if m else "utf-8", errors="replace"))
+    lines = [re.sub(r" *\t *", "\t", ln).strip(" \t") for ln in "".join(p.parts).splitlines()]
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + "\n"
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def libreoffice_to_text(src: str, out_dir: str) -> str:
+    """Documento -> TXT. Il filtro testo di LibreOffice per Windows si blocca con alcuni DOCX:
+    se non risponde entro un minuto, si passa da HTML ed estraiamo il testo noi."""
+    try:
+        return libreoffice_convert(src, "txt", out_dir, timeout=60)
+    except ConversionError:
+        with tempfile.TemporaryDirectory(prefix="ct_txt_", ignore_cleanup_errors=True) as tmp:
+            html = libreoffice_convert(src, "html", tmp)
+            final = unique_path(out_dir, _stem(src), "txt")
+            _html_to_text(html, final)
+            return final
+
+
 def libreoffice_convert(src: str, ext: str, out_dir: str, infilter: str | None = None, timeout: int = 600) -> str:
     soffice = tools.require("soffice")
-    with tempfile.TemporaryDirectory(prefix="ct_lo_") as tmp:
+    # ignore_cleanup_errors: su Windows un LibreOffice interrotto può tenere bloccati dei file
+    with tempfile.TemporaryDirectory(prefix="ct_lo_", ignore_cleanup_errors=True) as tmp:
         profile = os.path.join(tmp, "profilo")
         outtmp = os.path.join(tmp, "out")
         os.makedirs(outtmp)
@@ -297,10 +368,14 @@ def libreoffice_convert(src: str, ext: str, out_dir: str, infilter: str | None =
             src_in = os.path.join(tmp, _stem(src) + ".txt")
             shutil.copyfile(src, src_in)
         cmd += ["--convert-to", LO_FILTERS.get(ext, ext), "--outdir", outtmp, src_in]
+        proc = tools.popen(cmd, stdout=tools.subprocess.PIPE, stderr=tools.subprocess.PIPE,
+                           text=True, encoding="utf-8", errors="replace")
         try:
-            r = tools.run(cmd, timeout=timeout)
+            out_txt, err_txt = proc.communicate(timeout=timeout)
         except tools.subprocess.TimeoutExpired:
+            _kill_tree(proc)
             raise ConversionError("La conversione del documento ha impiegato troppo tempo.")
+        r = tools.subprocess.CompletedProcess(cmd, proc.returncode, out_txt, err_txt)
         produced = [f for f in os.listdir(outtmp)]
         if not produced:
             raise ConversionError("LibreOffice non è riuscito a convertire il documento.\n" + (r.stderr or r.stdout)[-500:])
@@ -335,7 +410,10 @@ def convert_document(job: Job, progress: Progress) -> list[str]:
             pdf = libreoffice_convert(job.src, "pdf", tmp)
             progress(0.4, "Creo le immagini…")
             return _pdf_to_images(pdf, job.out_dir, _stem(job.src), t.ext, progress, dpi=150)
-    out = libreoffice_convert(job.src, t.ext, job.out_dir)
+    if t.ext == "txt":
+        out = libreoffice_to_text(job.src, job.out_dir)
+    else:
+        out = libreoffice_convert(job.src, t.ext, job.out_dir)
     progress(1.0, "Fatto")
     return [out]
 
@@ -720,7 +798,10 @@ def _render_cad(doc, out: str, ext: str, progress: Progress, paper: str = "auto"
         backend = mbackend.PyMuPdfBackend()
         Frontend(RenderContext(doc), backend, config=cfg).draw_layout(lay, finalize=True)
         if ext == "pdf":
-            data = backend.get_pdf_bytes(page_def, settings=settings)
+            try:
+                data = backend.get_pdf_bytes(page_def, settings=settings)
+            except ValueError:  # layout senza niente da disegnare ("empty bounding box"): si salta
+                continue
             with pymupdf.open("pdf", data) as one:
                 merged.insert_pdf(one)
         else:
@@ -734,6 +815,9 @@ def _render_cad(doc, out: str, ext: str, progress: Progress, paper: str = "auto"
                     f.write(data)
             merged.close()
             return
+    if merged.page_count == 0:
+        merged.close()
+        raise ConversionError("Il disegno è vuoto: non c'è niente da mettere nel PDF.")
     merged.save(out, garbage=3, deflate=True)
     merged.close()
 
