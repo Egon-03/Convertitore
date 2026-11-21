@@ -1,0 +1,7 @@
+.venv/
+tools/
+dist/
+build/Output/
+build/ConvertiTutto/
+*.spec
+__pycache__/
