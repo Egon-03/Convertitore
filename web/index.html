@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ConvertiTutto</title>
+  <meta name="description" content="Converti immagini, video, audio, PDF, Word, Excel, DXF e archivi direttamente nel browser. Gratis, senza caricare i file su internet.">
+  <link rel="icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="./" aria-label="ConvertiTutto, pagina iniziale">
+      <img src="icon.png" alt="" width="32" height="32">
+      <span>ConvertiTutto</span>
+    </a>
+    <span class="privacy" title="La conversione avviene nel tuo browser">🔒 I file restano sul tuo computer</span>
+  </header>
+
+  <main>
+    <ol class="steps" aria-label="Passaggi">
+      <li data-step="1" class="on">Scegli il file</li>
+      <li data-step="2">Scegli la conversione</li>
+      <li data-step="3">Scarica</li>
+    </ol>
+
+    <!-- 1. scelta del file -->
+    <section id="pag-file" class="pag">
+      <label id="drop" class="drop" tabindex="0">
+        <input id="input" type="file" multiple hidden>
+        <span class="drop-icon" aria-hidden="true">⬇</span>
+        <span class="drop-title">Trascina qui un file</span>
+        <span class="drop-sub">oppure <u>clicca per sceglierlo</u> — anche più file insieme</span>
+      </label>
+      <div class="formats">
+        <h2>Cosa puoi convertire</h2>
+        <ul>
+          <li><b>Immagini</b> JPG, PNG, HEIC (iPhone), WEBP, GIF, BMP, SVG, AVIF → JPG, PNG, WEBP, PDF, ICO, BMP</li>
+          <li><b>Video</b> MP4, MOV, MKV, AVI, WEBM, WMV… → MP4, per WhatsApp, MP3, GIF, WEBM</li>
+          <li><b>Audio</b> MP3, WAV, M4A, OGG, FLAC, OPUS, WMA… → MP3, WAV, M4A, OGG, FLAC, OPUS</li>
+          <li><b>PDF</b> → immagini JPG/PNG, testo; più PDF → un solo PDF</li>
+          <li><b>Word</b> DOCX → PDF, pagina web, testo</li>
+          <li><b>Fogli di calcolo</b> XLSX, XLS, ODS, CSV → Excel, CSV, ODS, pagina web</li>
+          <li><b>Disegni CAD</b> DXF → PDF, SVG, PNG</li>
+          <li><b>Archivi</b> ZIP → estrai; più file → ZIP</li>
+          <li><b>Apple</b> Pages, Keynote, Numbers → anteprima PDF/JPG</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 2. scelta della conversione -->
+    <section id="pag-scegli" class="pag" hidden>
+      <div class="filebox">
+        <span id="file-icon" class="file-icon" aria-hidden="true"></span>
+        <div>
+          <div id="file-name" class="file-name"></div>
+          <div id="file-info" class="file-info"></div>
+        </div>
+        <button class="link" data-azione="ricomincia">Cambia file</button>
+      </div>
+      <div id="avviso" class="avviso" hidden></div>
+      <h2 id="titolo-consigliate">Consigliate</h2>
+      <div id="consigliate" class="cards"></div>
+      <button id="btn-altri" class="link altri" hidden>Altri formati ▾</button>
+      <div id="altri" class="cards" hidden></div>
+    </section>
+
+    <!-- 3. conversione e risultati -->
+    <section id="pag-fatto" class="pag" hidden>
+      <div id="lavoro" class="lavoro">
+        <div id="stato" class="stato">Converto…</div>
+        <div class="barra"><div id="barra" class="barra-piena"></div></div>
+        <div id="dettaglio" class="dettaglio"></div>
+      </div>
+      <div id="risultati" hidden>
+        <h2 id="titolo-risultati">Fatto!</h2>
+        <ul id="lista" class="lista"></ul>
+        <div class="azioni">
+          <button id="btn-zip" class="btn" hidden>Scarica tutto (ZIP)</button>
+          <button class="btn secondario" data-azione="indietro">Altra conversione dello stesso file</button>
+          <button class="btn secondario" data-azione="ricomincia">Converti un altro file</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="bottom">
+    Tutto avviene nel browser: i file non vengono caricati su nessun server. Gratis, senza registrazione.
+  </footer>
+
+  <iframe id="stampa" title="Stampa" hidden></iframe>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

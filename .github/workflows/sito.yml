@@ -1,0 +1,52 @@
+# Pubblica il sito ConvertiTutto (cartella web/) su GitHub Pages.
+# Prima volta: Settings → Pages → Source: «GitHub Actions».
+name: Sito
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, "claude/**"]
+    paths: ["web/**", ".github/workflows/sito.yml"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Librerie
+        working-directory: web
+        run: npm ci && node copia-librerie.mjs
+      - name: Prepara il sito
+        run: |
+          mkdir _site
+          cp -r web/index.html web/style.css web/app.js web/icon.png web/vendor _site/
+          touch _site/.nojekyll
+          du -sh _site
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
